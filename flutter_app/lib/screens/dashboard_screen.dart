@@ -16,6 +16,15 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Dashboard'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.notifications),
+            onPressed: () async {
+              await khaniProvider.fetchNotifications();
+              if (context.mounted) {
+                Navigator.pushNamed(context, '/notifications');
+              }
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await authProvider.logout();

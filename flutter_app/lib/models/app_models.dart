@@ -57,12 +57,16 @@ class Khani {
   final String startTime;
   final String? location;
   final String prayerAfter;
-  final int durationDays;
+  final int durationMinutes;
   final String? description;
-  final bool isActive;
+  final String status;
+  final String joinCode;
   final String createdBy;
   final String? creatorName;
+  final String? hostId;
+  final String? hostName;
   final DateTime createdAt;
+  final DateTime? startedAt;
   final DateTime? endedAt;
 
   Khani({
@@ -72,12 +76,16 @@ class Khani {
     required this.startTime,
     this.location,
     required this.prayerAfter,
-    required this.durationDays,
+    required this.durationMinutes,
     this.description,
-    required this.isActive,
+    required this.status,
+    required this.joinCode,
     required this.createdBy,
     this.creatorName,
+    this.hostId,
+    this.hostName,
     required this.createdAt,
+    this.startedAt,
     this.endedAt,
   });
 
@@ -89,12 +97,16 @@ class Khani {
       startTime: json['start_time'] ?? '',
       location: json['location'],
       prayerAfter: json['prayer_after'] ?? '',
-      durationDays: json['duration_days'] ?? 30,
+      durationMinutes: json['duration_minutes'] ?? 60,
       description: json['description'],
-      isActive: json['is_active'] ?? true,
+      status: json['status'] ?? 'scheduled',
+      joinCode: json['join_code'] ?? '',
       createdBy: json['created_by'] ?? '',
       creatorName: json['profiles']?['name'],
+      hostId: json['host_id'] ?? json['host_id']?['_id'],
+      hostName: json['host_profile']?['name'] ?? json['host_id']?['name'],
       createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      startedAt: json['started_at'] != null ? DateTime.parse(json['started_at']) : null,
       endedAt: json['ended_at'] != null ? DateTime.parse(json['ended_at']) : null,
     );
   }
@@ -107,11 +119,14 @@ class Khani {
       'start_time': startTime,
       'location': location,
       'prayer_after': prayerAfter,
-      'duration_days': durationDays,
+      'duration_minutes': durationMinutes,
       'description': description,
-      'is_active': isActive,
+      'status': status,
+      'join_code': joinCode,
       'created_by': createdBy,
+      'host_id': hostId,
       'created_at': createdAt.toIso8601String(),
+      'started_at': startedAt?.toIso8601String(),
       'ended_at': endedAt?.toIso8601String(),
     };
   }
@@ -206,49 +221,39 @@ class SawabDetails {
 class LiveDuaSession {
   final String id;
   final String khaniId;
-  final String hostId;
-  final String uniqueCode;
-  final String status;
   final String? streamType;
   final String? streamUrl;
+  final String status;
   final DateTime? startedAt;
   final DateTime? endedAt;
-  final List<Participant> participants;
   final String? khaniTitle;
-  final String? hostName;
+  final String? joinCode;
   final DateTime createdAt;
 
   LiveDuaSession({
     required this.id,
     required this.khaniId,
-    required this.hostId,
-    required this.uniqueCode,
-    required this.status,
     this.streamType,
     this.streamUrl,
+    required this.status,
     this.startedAt,
     this.endedAt,
-    required this.participants,
     this.khaniTitle,
-    this.hostName,
+    this.joinCode,
     required this.createdAt,
   });
 
   factory LiveDuaSession.fromJson(Map<String, dynamic> json) {
-    final participantsList = (json['participants'] as List? ?? []);
     return LiveDuaSession(
       id: json['id'] ?? '',
       khaniId: json['khani_id'] ?? '',
-      hostId: json['host_id'] ?? '',
-      uniqueCode: json['unique_code'] ?? '',
-      status: json['status'] ?? 'waiting',
       streamType: json['stream_type'],
       streamUrl: json['stream_url'],
+      status: json['status'] ?? 'waiting',
       startedAt: json['started_at'] != null ? DateTime.parse(json['started_at']) : null,
       endedAt: json['ended_at'] != null ? DateTime.parse(json['ended_at']) : null,
-      participants: participantsList.map((p) => Participant.fromJson(p)).toList(),
       khaniTitle: json['khani_id']?['title'] ?? json['khani']?['title'],
-      hostName: json['host_id']?['name'],
+      joinCode: json['khani_id']?['join_code'],
       createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
     );
   }
@@ -257,20 +262,17 @@ class LiveDuaSession {
     return {
       'id': id,
       'khani_id': khaniId,
-      'host_id': hostId,
-      'unique_code': uniqueCode,
-      'status': status,
       'stream_type': streamType,
       'stream_url': streamUrl,
+      'status': status,
       'started_at': startedAt?.toIso8601String(),
       'ended_at': endedAt?.toIso8601String(),
-      'participants': participants.map((p) => p.toJson()).toList(),
       'created_at': createdAt.toIso8601String(),
     };
   }
 }
 
-class Participant {
+class KhaniParticipant {
   final String userId;
   final String role;
   final DateTime joinedAt;
@@ -278,7 +280,7 @@ class Participant {
   final String? memberCode;
   final String? avatarUrl;
 
-  Participant({
+  KhaniParticipant({
     required this.userId,
     required this.role,
     required this.joinedAt,
@@ -287,8 +289,8 @@ class Participant {
     this.avatarUrl,
   });
 
-  factory Participant.fromJson(Map<String, dynamic> json) {
-    return Participant(
+  factory KhaniParticipant.fromJson(Map<String, dynamic> json) {
+    return KhaniParticipant(
       userId: json['user_id'] ?? '',
       role: json['role'] ?? 'listener',
       joinedAt: DateTime.parse(json['joined_at'] ?? DateTime.now().toIso8601String()),
@@ -303,6 +305,58 @@ class Participant {
       'user_id': userId,
       'role': role,
       'joined_at': joinedAt.toIso8601String(),
+    };
+  }
+}
+
+class NotificationModel {
+  final String id;
+  final String userId;
+  final String khaniId;
+  final String type;
+  final String title;
+  final String message;
+  final Map<String, dynamic>? data;
+  final bool read;
+  final DateTime createdAt;
+
+  NotificationModel({
+    required this.id,
+    required this.userId,
+    required this.khaniId,
+    required this.type,
+    required this.title,
+    required this.message,
+    this.data,
+    required this.read,
+    required this.createdAt,
+  });
+
+  factory NotificationModel.fromJson(Map<String, dynamic> json) {
+    return NotificationModel(
+      id: json['id'] ?? '',
+      userId: json['user_id'] ?? '',
+      khaniId: json['khani_id'] ?? '',
+      type: json['type'] ?? '',
+      title: json['title'] ?? '',
+      message: json['message'] ?? '',
+      data: json['data'] != null ? Map<String, dynamic>.from(json['data']) : null,
+      read: json['read'] ?? false,
+      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'user_id': userId,
+      'khani_id': khaniId,
+      'type': type,
+      'title': title,
+      'message': message,
+      'data': data,
+      'read': read,
+      'created_at': createdAt.toIso8601String(),
     };
   }
 }

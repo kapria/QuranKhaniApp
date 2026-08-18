@@ -36,24 +36,45 @@ class _KhaniDetailsScreenState extends State<KhaniDetailsScreen> {
       appBar: AppBar(
         title: const Text('Khani Details'),
         actions: [
-          if (khaniProvider.selectedKhani?.isActive == true) ...[
+          if (khaniProvider.selectedKhani?.status == 'live') ...[
             IconButton(
               icon: const Icon(Icons.live_tv, color: Colors.red),
               onPressed: () {
-                Navigator.pushNamed(
-                  context,
-                  '/start-live-dua',
-                  arguments: khaniProvider.selectedKhani!.id,
-                );
+                final code = khaniProvider.selectedKhani?.joinCode;
+                if (code != null && code.isNotEmpty) {
+                  Navigator.pushNamed(
+                    context,
+                    '/start-live-dua',
+                    arguments: code,
+                  );
+                }
               },
               tooltip: 'Start Live Dua',
             ),
             IconButton(
-              icon: const Icon(Icons.stop_circle),
+              icon: const Icon(Icons.stop),
               onPressed: () => _showEndKhaniDialog(context, khaniId),
               tooltip: 'End Khani',
             ),
-          ]
+          ],
+          if (khaniProvider.selectedKhani?.status == 'scheduled' &&
+              (khaniProvider.selectedKhani?.hostId == authProvider.user?.id ||
+               khaniProvider.selectedKhani?.createdBy == authProvider.user?.id))
+            IconButton(
+              icon: const Icon(Icons.play_arrow, color: Colors.red),
+              onPressed: () async {
+                final success = await khaniProvider.startKhani(khaniId);
+                if (success && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Quran Khani started! Share the join code.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              tooltip: 'Start Khani',
+            ),
         ],
       ),
       body: khaniProvider.isLoading && khaniProvider.selectedKhani == null
@@ -292,14 +313,38 @@ class _KhaniDetailsScreenState extends State<KhaniDetailsScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.timelapse, size: 18),
-                const SizedBox(width: 8),
-                Text('${khani.durationDays} days'),
-              ],
-            ),
-            if (khani.description != null) ...[
+             Row(
+               children: [
+                 const Icon(Icons.timelapse, size: 18),
+                 const SizedBox(width: 8),
+                 Text('${khani.durationMinutes} minutes'),
+               ],
+             ),
+             if (khani.joinCode.isNotEmpty) ...[
+               const SizedBox(height: 8),
+               Row(
+                 children: [
+                   const Icon(Icons.vpn_key, size: 18),
+                   const SizedBox(width: 8),
+                   Text(
+                     'Code: ${khani.joinCode}',
+                     style: const TextStyle(fontWeight: FontWeight.bold),
+                   ),
+                   IconButton(
+                     icon: const Icon(Icons.copy, size: 18),
+                     onPressed: () {
+                       ScaffoldMessenger.of(context).showSnackBar(
+                         SnackBar(content: Text('Copied: ${khani.joinCode}')),
+                       );
+                     },
+                   ),
+                 ],
+               ),
+             ],
+             if (khani.description != null) ...[
+               const SizedBox(height: 8),
+               Text(khani.description!),
+             ],
               const SizedBox(height: 8),
               Text(khani.description!),
             ],
@@ -310,9 +355,31 @@ class _KhaniDetailsScreenState extends State<KhaniDetailsScreen> {
   }
 
   Widget _buildDurationInfo(Khani khani) {
-    final start = DateTime.parse(khani.startDate);
-    final end = start.add(Duration(days: khani.durationDays));
-    final remaining = end.difference(DateTime.now()).inDays;
+    if (khani.status == 'live' && khani.startedAt != null) {
+      final elapsed = DateTime.now().difference(khani.startedAt!).inMinutes;
+      final remaining = khani.durationMinutes - elapsed;
+      
+      return Card(
+        color: Colors.red[50],
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              const Icon(Icons.live_tv, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  remaining > 0
+                      ? '$remaining minutes remaining'
+                      : 'Time is up! Host can end the session.',
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Card(
       color: Colors.blue[50],
@@ -324,9 +391,11 @@ class _KhaniDetailsScreenState extends State<KhaniDetailsScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                remaining > 0
-                    ? '$remaining days remaining (ends ${end.toString().split(' ')[0]})'
-                    : 'Duration completed',
+                khani.status == 'scheduled'
+                    ? 'Duration: ${khani.durationMinutes} minutes'
+                    : khani.status == 'ended'
+                        ? 'Session ended'
+                        : 'Waiting to start',
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ),

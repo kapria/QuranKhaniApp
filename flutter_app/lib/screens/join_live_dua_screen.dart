@@ -19,7 +19,7 @@ class _JoinLiveDuaScreenState extends State<JoinLiveDuaScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Join Live Dua'),
+        title: const Text('Join Quran Khani'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -70,14 +70,14 @@ class _JoinLiveDuaScreenState extends State<JoinLiveDuaScreen> {
                         return;
                       }
                       setState(() => _isLoading = true);
-                      final session = await khaniProvider.joinLiveDua(code);
+                      final khani = await khaniProvider.joinKhani(code);
                       if (mounted) {
                         setState(() => _isLoading = false);
-                        if (session != null) {
+                        if (khani != null) {
                           Navigator.pushReplacementNamed(
                             context,
-                            '/live-dua-session',
-                            arguments: session.uniqueCode,
+                            '/khani-details',
+                            arguments: khani.id,
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(

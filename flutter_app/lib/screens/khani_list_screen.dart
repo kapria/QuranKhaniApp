@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/khani_provider.dart';
+import '../providers/auth_provider.dart';
 
 class KhaniListScreen extends StatelessWidget {
   const KhaniListScreen({super.key});
@@ -8,6 +9,7 @@ class KhaniListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final khaniProvider = Provider.of<KhaniProvider>(context);
+    final authProvider = Provider.of<AuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -18,12 +20,15 @@ class KhaniListScreen extends StatelessWidget {
         child: khaniProvider.isLoading && khaniProvider.khanis.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : khaniProvider.khanis.isEmpty
-                ? const Center(child: Text('No Khanis available'))
+                ? const Center(child: Text('No active Khanis available'))
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: khaniProvider.khanis.length,
                     itemBuilder: (context, index) {
                       final khani = khaniProvider.khanis[index];
+                      final isHost = khani.hostId == authProvider.user?.id || 
+                                     khani.createdBy == authProvider.user?.id;
+                      
                       return Card(
                         margin: const EdgeInsets.only(bottom: 16),
                         child: InkWell(
@@ -56,18 +61,23 @@ class KhaniListScreen extends StatelessWidget {
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: khani.isActive
-                                            ? Colors.green[100]
-                                            : Colors.red[100],
+                                        color: khani.status == 'live'
+                                            ? Colors.red[100]
+                                            : khani.status == 'ended'
+                                                ? Colors.grey[200]
+                                                : Colors.orange[100],
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
-                                        khani.isActive ? 'Active' : 'Ended',
+                                        khani.status.toUpperCase(),
                                         style: TextStyle(
-                                          color: khani.isActive
-                                              ? Colors.green[800]
-                                              : Colors.red[800],
+                                          color: khani.status == 'live'
+                                              ? Colors.red[800]
+                                              : khani.status == 'ended'
+                                                  ? Colors.grey[800]
+                                                  : Colors.orange[800],
                                           fontSize: 12,
+                                          fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                     ),
@@ -86,31 +96,128 @@ class KhaniListScreen extends StatelessWidget {
                                   ],
                                 ),
                                 const SizedBox(height: 8),
+                                if (khani.location != null) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.location_on, size: 16),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          khani.location!,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
                                 Row(
                                   children: [
-                                    const Icon(Icons.location_on, size: 16),
+                                    const Icon(Icons.timelapse, size: 16),
                                     const SizedBox(width: 4),
-                                    Expanded(
-                                      child: Text(
-                                        khani.location ?? 'No location',
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
+                                    Text('${khani.durationMinutes} minutes'),
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-                                Chip(
-                                  label: Text(
-                                    'After ${_formatPrayer(khani.prayerAfter)}',
-                                    style: const TextStyle(fontSize: 12),
+                                if (khani.joinCode.isNotEmpty) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.vpn_key, size: 16),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        khani.joinCode,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        icon: const Icon(Icons.copy, size: 18),
+                                        onPressed: () {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Copied: ${khani.joinCode}')),
+                                          );
+                                        },
+                                        tooltip: 'Copy code',
+                                      ),
+                                    ],
                                   ),
-                                  backgroundColor: Colors.blue[50],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Duration: ${khani.durationDays} days',
-                                  style: TextStyle(color: Colors.grey[600]),
-                                ),
+                                ],
+                                if (isHost && khani.status == 'scheduled') ...[
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton.icon(
+                                      onPressed: () async {
+                                        final success = await khaniProvider.startKhani(khani.id);
+                                        if (success && context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Quran Khani started! Share the code.'),
+                                              backgroundColor: Colors.green,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      icon: const Icon(Icons.play_arrow),
+                                      label: const Text('Start Quran Khani'),
+                                      style: ElevatedButton(
+                                        style: ElevatedButton(
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                if (isHost && khani.status == 'live') ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: () async {
+                                            final success = await khaniProvider.endKhani(khani.id);
+                                            if (success && context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('Quran Khani ended'),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(Icons.stop),
+                                          label: const Text('End Khani'),
+                                          style: ElevatedButton(
+                                            style: ElevatedButton(
+                                              backgroundColor: Colors.red,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            Navigator.pushNamed(
+                                              context,
+                                              '/start-live-dua',
+                                              arguments: khani.joinCode,
+                                            );
+                                          },
+                                          icon: const Icon(Icons.live_tv),
+                                          label: const Text('Live Dua'),
+                                          style: ElevatedButton(
+                                            style: ElevatedButton(
+                                              backgroundColor: Colors.purple,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -128,23 +235,6 @@ class KhaniListScreen extends StatelessWidget {
     );
   }
 
-  String _formatPrayer(String prayer) {
-    switch (prayer) {
-      case 'fajar':
-        return 'Fajar';
-      case 'zohar':
-        return 'Zohar';
-      case 'asar':
-        return 'Asar';
-      case 'magrib':
-        return 'Magrib';
-      case 'isa':
-        return 'Isha';
-      default:
-        return prayer;
-    }
-  }
-
   void _showCreateKhaniDialog(BuildContext context) {
     final titleController = TextEditingController();
     final dateController = TextEditingController();
@@ -152,7 +242,7 @@ class KhaniListScreen extends StatelessWidget {
     final locationController = TextEditingController();
     final descriptionController = TextEditingController();
     String selectedPrayer = 'fajar';
-    int durationDays = 30;
+    int durationMinutes = 60;
     final khaniProvider = Provider.of<KhaniProvider>(context, listen: false);
 
     showDialog(
@@ -194,6 +284,21 @@ class KhaniListScreen extends StatelessWidget {
                     labelText: 'Location',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Duration (minutes)',
+                    border: OutlineInputBorder(),
+                    hintText: 'e.g. 60',
+                  ),
+                  onChanged: (value) {
+                    final minutes = int.tryParse(value);
+                    if (minutes != null && minutes > 0) {
+                      setState(() => durationMinutes = minutes);
+                    }
+                  },
                 ),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
@@ -251,7 +356,7 @@ class KhaniListScreen extends StatelessWidget {
                       ? null
                       : locationController.text.trim(),
                   'prayer_after': selectedPrayer,
-                  'duration_days': durationDays,
+                  'duration_minutes': durationMinutes,
                   'description': descriptionController.text.trim().isEmpty
                       ? null
                       : descriptionController.text.trim(),

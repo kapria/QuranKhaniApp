@@ -12,7 +12,7 @@ class ParaSelectionScreen extends StatelessWidget {
     final khaniProvider = Provider.of<KhaniProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
     final activeKhani = khaniProvider.khanis.firstWhere(
-      (k) => k.isActive,
+      (k) => k.status == 'scheduled' || k.status == 'live',
       orElse: () => khaniProvider.khanis.isNotEmpty
           ? khaniProvider.khanis.first
           : Khani(
@@ -21,8 +21,9 @@ class ParaSelectionScreen extends StatelessWidget {
               startDate: '',
               startTime: '',
               prayerAfter: '',
-              durationDays: 30,
-              isActive: false,
+              durationMinutes: 60,
+              status: 'scheduled',
+              joinCode: '',
               createdBy: '',
               createdAt: DateTime.now(),
             ),
@@ -71,8 +72,24 @@ class ParaSelectionScreen extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text('Duration: ${activeKhani.durationDays} days'),
+                            Text('Duration: ${activeKhani.durationMinutes} minutes'),
                             Text('Start: ${activeKhani.startDate} at ${activeKhani.startTime}'),
+                            if (activeKhani.joinCode.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.vpn_key, size: 16),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Code: ${activeKhani.joinCode}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -89,7 +106,7 @@ class ParaSelectionScreen extends StatelessWidget {
                         ),
                         const Spacer(),
                         Text(
-                          'Total Duration: ${activeKhani.durationDays} days',
+                          'Total Duration: ${activeKhani.durationMinutes} minutes',
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 14,

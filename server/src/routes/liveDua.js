@@ -2,35 +2,14 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const LiveDuaSession = require('../models/LiveDuaSession');
 const Khani = require('../models/Khani');
+const KhaniParticipant = require('../models/KhaniParticipant');
 const Profile = require('../models/Profile');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-const generateUniqueCode = async () => {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = '';
-  for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-
-  let attempts = 0;
-  let finalCode = code;
-  while (attempts < 10) {
-    const existing = await LiveDuaSession.findOne({ unique_code: finalCode });
-    if (!existing) break;
-    finalCode = '';
-    for (let i = 0; i < 8; i++) {
-      finalCode += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    attempts++;
-  }
-
-  return finalCode;
-};
-
 router.post('/start', authenticate, [
-  body('khani_id').isMongoId().withMessage('Valid khani ID is required'),
+  body('join_code').notEmpty().withMessage('Join code is required'),
   body('stream_type').isIn(['audio', 'video']).withMessage('Stream type must be audio or video'),
 ], async (req, res) => {
   try {
@@ -43,52 +22,46 @@ router.post('/start', authenticate, [
       });
     }
 
-    const { khani_id, stream_type } = req.body;
-    const hostId = req.user._id;
+    const { join_code, stream_type } = req.body;
+    const userId = req.user._id;
 
-    const khani = await Khani.findById(khani_id);
+    const khani = await Khani.findOne({ join_code: join_code.toUpperCase() });
     if (!khani) {
       return res.status(404).json({
         status: 'error',
-        message: 'Quran Khani not found',
+        message: 'Invalid join code',
       });
     }
 
-    const existingLive = await LiveDuaSession.findOne({
-      khani_id,
-      status: { $in: ['waiting', 'live'] },
-    });
+    if (khani.host_id && khani.host_id.toString() !== userId.toString()) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Only host can start live dua',
+      });
+    }
 
-    if (existingLive) {
+    if (khani.status !== 'live') {
       return res.status(400).json({
         status: 'error',
-        message: 'Live session already exists for this Khani',
+        message: 'Quran Khani is not live',
       });
     }
 
-    const uniqueCode = await generateUniqueCode();
-
-    const session = await LiveDuaSession.create({
-      khani_id,
-      host_id: hostId,
-      unique_code: uniqueCode,
-      status: 'waiting',
-      stream_type: stream_type || 'audio',
-      participants: [
-        {
-          user_id: hostId,
-          role: 'host',
-        },
-      ],
-    });
+    let session = await LiveDuaSession.findOne({ khani_id: khani._id });
+    if (!session) {
+      session = await LiveDuaSession.create({
+        khani_id: khani._id,
+        stream_type: stream_type || 'audio',
+        status: 'waiting',
+      });
+    }
 
     const populated = await LiveDuaSession.findById(session._id)
-      .populate('host_id', 'name member_code avatar_url')
-      .populate('khani_id', 'title');
+      .populate('khani_id', 'title join_code');
 
-    return res.status(201).json({
+    return res.status(200).json({
       status: 'success',
-      message: 'Live dua session created',
+      message: 'Live dua session ready',
       data: { session: populated },
     });
   } catch (error) {
@@ -101,47 +74,58 @@ router.post('/start', authenticate, [
 
 router.post('/join', authenticate, async (req, res) => {
   try {
-    const { unique_code } = req.body;
+    const { join_code } = req.body;
     const userId = req.user._id;
 
-    const session = await LiveDuaSession.findOne({ unique_code });
+    if (!join_code) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Join code is required',
+      });
+    }
 
-    if (!session) {
+    const khani = await Khani.findOne({ join_code: join_code.toUpperCase() });
+    if (!khani) {
       return res.status(404).json({
         status: 'error',
         message: 'Invalid join code',
       });
     }
 
-    if (session.status === 'ended') {
+    if (khani.status === 'ended') {
       return res.status(400).json({
         status: 'error',
-        message: 'This live session has ended',
+        message: 'This Quran Khani has ended',
       });
     }
 
-    const isHost = session.host_id.toString() === userId.toString();
-    const existingParticipant = session.participants.find(
-      (p) => p.user_id.toString() === userId.toString()
-    );
+    const isHost = khani.host_id && khani.host_id.toString() === userId.toString();
+    const existingParticipant = await KhaniParticipant.findOne({
+      khani_id: khani._id,
+      user_id: userId,
+    });
 
     if (!existingParticipant) {
-      session.participants.push({
+      await KhaniParticipant.create({
+        khani_id: khani._id,
         user_id: userId,
         role: isHost ? 'host' : 'listener',
       });
-      await session.save();
     }
 
-    const populated = await LiveDuaSession.findById(session._id)
+    const liveSession = await LiveDuaSession.findOne({ khani_id: khani._id });
+
+    const populated = await Khani.findById(khani._id)
       .populate('host_id', 'name member_code avatar_url')
-      .populate('participants.user_id', 'name member_code avatar_url')
-      .populate('khani_id', 'title');
+      .populate('created_by', 'name member_code');
 
     return res.status(200).json({
       status: 'success',
       message: isHost ? 'Welcome host!' : 'Joined live dua session',
-      data: { session: populated },
+      data: {
+        khani: populated,
+        liveSession: liveSession || null,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -151,24 +135,29 @@ router.post('/join', authenticate, async (req, res) => {
   }
 });
 
-router.get('/code/:unique_code', async (req, res) => {
+router.get('/code/:join_code', async (req, res) => {
   try {
-    const { unique_code } = req.params;
+    const { join_code } = req.params;
 
-    const session = await LiveDuaSession.findOne({ unique_code })
+    const khani = await Khani.findOne({ join_code: join_code.toUpperCase() })
       .populate('host_id', 'name member_code avatar_url')
       .populate('khani_id', 'title');
 
-    if (!session) {
+    if (!khani) {
       return res.status(404).json({
         status: 'error',
         message: 'Session not found',
       });
     }
 
+    const liveSession = await LiveDuaSession.findOne({ khani_id: khani._id });
+
     return res.status(200).json({
       status: 'success',
-      data: { session },
+      data: {
+        khani,
+        liveSession,
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -182,41 +171,47 @@ router.get('/khani/:khani_id', authenticate, async (req, res) => {
   try {
     const { khani_id } = req.params;
 
-    const sessions = await LiveDuaSession.find({ khani_id })
-      .populate('host_id', 'name member_code')
-      .sort({ created_at: -1 });
+    const session = await LiveDuaSession.findOne({ khani_id });
 
     return res.status(200).json({
       status: 'success',
-      data: { sessions },
+      data: { session },
     });
   } catch (error) {
     return res.status(500).json({
       status: 'error',
-      message: 'Server error while fetching live sessions',
+      message: 'Server error while fetching live session',
     });
   }
 });
 
-router.post('/code/:unique_code/start', authenticate, async (req, res) => {
+router.post('/code/:join_code/start', authenticate, async (req, res) => {
   try {
-    const { unique_code } = req.params;
-    const { stream_url } = req.body;
+    const { join_code } = req.params;
+    const { stream_url, stream_type } = req.body;
     const userId = req.user._id;
 
-    const session = await LiveDuaSession.findOne({ unique_code });
-
-    if (!session) {
+    const khani = await Khani.findOne({ join_code: join_code.toUpperCase() });
+    if (!khani) {
       return res.status(404).json({
         status: 'error',
-        message: 'Session not found',
+        message: 'Invalid join code',
       });
     }
 
-    if (session.host_id.toString() !== userId.toString()) {
+    if (!khani.host_id || khani.host_id.toString() !== userId.toString()) {
       return res.status(403).json({
         status: 'error',
         message: 'Only host can start stream',
+      });
+    }
+
+    let session = await LiveDuaSession.findOne({ khani_id: khani._id });
+    if (!session) {
+      session = await LiveDuaSession.create({
+        khani_id: khani._id,
+        stream_type: stream_type || 'audio',
+        status: 'waiting',
       });
     }
 
@@ -226,8 +221,7 @@ router.post('/code/:unique_code/start', authenticate, async (req, res) => {
     await session.save();
 
     const populated = await LiveDuaSession.findById(session._id)
-      .populate('host_id', 'name member_code avatar_url')
-      .populate('khani_id', 'title');
+      .populate('khani_id', 'title join_code');
 
     return res.status(200).json({
       status: 'success',
@@ -242,30 +236,32 @@ router.post('/code/:unique_code/start', authenticate, async (req, res) => {
   }
 });
 
-router.post('/code/:unique_code/end', authenticate, async (req, res) => {
+router.post('/code/:join_code/end', authenticate, async (req, res) => {
   try {
-    const { unique_code } = req.params;
+    const { join_code } = req.params;
     const userId = req.user._id;
 
-    const session = await LiveDuaSession.findOne({ unique_code });
-
-    if (!session) {
+    const khani = await Khani.findOne({ join_code: join_code.toUpperCase() });
+    if (!khani) {
       return res.status(404).json({
         status: 'error',
-        message: 'Session not found',
+        message: 'Invalid join code',
       });
     }
 
-    if (session.host_id.toString() !== userId.toString()) {
+    if (!khani.host_id || khani.host_id.toString() !== userId.toString()) {
       return res.status(403).json({
         status: 'error',
         message: 'Only host can end the session',
       });
     }
 
-    session.status = 'ended';
-    session.ended_at = new Date();
-    await session.save();
+    const session = await LiveDuaSession.findOne({ khani_id: khani._id });
+    if (session) {
+      session.status = 'ended';
+      session.ended_at = new Date();
+      await session.save();
+    }
 
     return res.status(200).json({
       status: 'success',

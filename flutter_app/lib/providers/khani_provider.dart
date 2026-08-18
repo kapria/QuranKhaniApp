@@ -9,6 +9,7 @@ class KhaniProvider extends ChangeNotifier {
   Khani? _selectedKhani;
   SawabDetails? _sawabDetails;
   LiveDuaSession? _liveSession;
+  List<NotificationModel> _notifications = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -18,6 +19,7 @@ class KhaniProvider extends ChangeNotifier {
   Khani? get selectedKhani => _selectedKhani;
   SawabDetails? get sawabDetails => _sawabDetails;
   LiveDuaSession? get liveSession => _liveSession;
+  List<NotificationModel> get notifications => _notifications;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
@@ -87,6 +89,84 @@ class KhaniProvider extends ChangeNotifier {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<bool> startKhani(String khaniId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final khani = await ApiService().startKhani(khaniId);
+      if (khani != null) {
+        final index = _khanis.indexWhere((k) => k.id == khaniId);
+        if (index != -1) {
+          _khanis[index] = khani;
+        }
+        if (_selectedKhani?.id == khaniId) {
+          _selectedKhani = khani;
+        }
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<Khani?> joinKhani(String joinCode) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final khani = await ApiService().joinKhani(joinCode);
+      _isLoading = false;
+      notifyListeners();
+      return khani;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> endKhani(String khaniId) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService().post('/khanis/$khaniId/end', {});
+      if (response['status'] == 'success') {
+        final index = _khanis.indexWhere((k) => k.id == khaniId);
+        if (index != -1) {
+          _khanis[index] = Khani.fromJson(response['data']['khani']);
+        }
+        if (_selectedKhani?.id == khaniId) {
+          _selectedKhani = Khani.fromJson(response['data']['khani']);
+        }
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
     }
   }
 
@@ -183,13 +263,13 @@ class KhaniProvider extends ChangeNotifier {
     }
   }
 
-  Future<LiveDuaSession?> startLiveDua(String khaniId, String streamType) async {
+  Future<LiveDuaSession?> startLiveDua(String joinCode, String streamType) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final session = await ApiService().startLiveDua(khaniId, streamType);
+      final session = await ApiService().startLiveDua(joinCode, streamType);
       if (session != null) {
         _liveSession = session;
       }
@@ -204,19 +284,20 @@ class KhaniProvider extends ChangeNotifier {
     }
   }
 
-  Future<LiveDuaSession?> joinLiveDua(String uniqueCode) async {
+  Future<Map<String, dynamic>?> joinLiveDua(String joinCode) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final session = await ApiService().joinLiveDua(uniqueCode);
-      if (session != null) {
-        _liveSession = session;
+      final data = await ApiService().joinLiveDua(joinCode);
+      if (data != null) {
+        _liveSession = LiveDuaSession.fromJson(data['liveSession'] ?? {});
+        _selectedKhani = Khani.fromJson(data['khani']);
       }
       _isLoading = false;
       notifyListeners();
-      return session;
+      return data;
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
@@ -225,13 +306,13 @@ class KhaniProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> getLiveSession(String uniqueCode) async {
+  Future<void> getLiveSession(String joinCode) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final session = await ApiService().getLiveSession(uniqueCode);
+      final session = await ApiService().getLiveSessionByCode(joinCode);
       _liveSession = session;
       _isLoading = false;
       notifyListeners();
@@ -242,15 +323,15 @@ class KhaniProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> startStream(String uniqueCode, String? streamUrl) async {
+  Future<bool> startStream(String joinCode, String? streamUrl, String streamType) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final success = await ApiService().startStream(uniqueCode, streamUrl);
+      final success = await ApiService().startStream(joinCode, streamUrl, streamType);
       if (success) {
-        await getLiveSession(uniqueCode);
+        await getLiveSession(joinCode);
       }
       _isLoading = false;
       notifyListeners();
@@ -263,9 +344,9 @@ class KhaniProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> endLiveDua(String uniqueCode) async {
+  Future<bool> endLiveDua(String joinCode) async {
     try {
-      final success = await ApiService().endLiveDua(uniqueCode);
+      final success = await ApiService().endLiveDua(joinCode);
       if (success) {
         _liveSession = null;
         notifyListeners();
@@ -274,6 +355,50 @@ class KhaniProvider extends ChangeNotifier {
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
       notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> fetchNotifications() async {
+    try {
+      final notifications = await ApiService().getNotifications();
+      _notifications = notifications;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    try {
+      return await ApiService().getUnreadNotificationCount();
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  Future<bool> markNotificationAsRead(String notificationId) async {
+    try {
+      final success = await ApiService().markNotificationAsRead(notificationId);
+      if (success) {
+        final index = _notifications.indexWhere((n) => n.id == notificationId);
+        if (index != -1) {
+          _notifications[index] = NotificationModel(
+            id: _notifications[index].id,
+            userId: _notifications[index].userId,
+            khaniId: _notifications[index].khaniId,
+            type: _notifications[index].type,
+            title: _notifications[index].title,
+            message: _notifications[index].message,
+            data: _notifications[index].data,
+            read: true,
+            createdAt: _notifications[index].createdAt,
+          );
+          notifyListeners();
+        }
+      }
+      return success;
+    } catch (e) {
       return false;
     }
   }

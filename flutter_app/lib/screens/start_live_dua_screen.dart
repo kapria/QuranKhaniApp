@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/khani_provider.dart';
-import '../providers/auth_provider.dart';
 
 class StartLiveDuaScreen extends StatefulWidget {
   const StartLiveDuaScreen({super.key});
@@ -11,23 +10,22 @@ class StartLiveDuaScreen extends StatefulWidget {
 }
 
 class _StartLiveDuaScreenState extends State<StartLiveDuaScreen> {
-  String? _selectedKhaniId;
   String _streamType = 'audio';
   bool _isLoading = false;
+  String? _joinCode;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)!.settings.arguments;
-    if (args is String && _selectedKhaniId == null) {
-      _selectedKhaniId = args;
+    if (args is String && _joinCode == null) {
+      _joinCode = args;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final khaniProvider = Provider.of<KhaniProvider>(context);
-    final activeKhanis = khaniProvider.khanis.where((k) => k.isActive).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -44,35 +42,28 @@ class _StartLiveDuaScreenState extends State<StartLiveDuaScreen> {
               const SizedBox(height: 4),
             const SizedBox(height: 16),
             const Text(
-              'Select Quran Khani',
+              'Join Code',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (activeKhanis.isEmpty)
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text('No active Khanis available'),
-                ),
-              )
-            else
-              DropdownButtonFormField<String>(
-                value: _selectedKhaniId,
-                decoration: const InputDecoration(
-                  labelText: 'Quran Khani',
-                  border: OutlineInputBorder(),
-                ),
-                items: activeKhanis
-                    .map((khani) => DropdownMenuItem(
-                          value: khani.id,
-                          child: Text(khani.title),
-                        ))
-                    .toList(),
-                onChanged: (value) {
-                  setState(() => _selectedKhaniId = value);
-                },
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue),
               ),
-            const SizedBox(height: 16),
+              child: Text(
+                _joinCode ?? '',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
             const Text(
               'Stream Type',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -98,12 +89,12 @@ class _StartLiveDuaScreenState extends State<StartLiveDuaScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _isLoading || _selectedKhaniId == null
+              onPressed: _isLoading || _joinCode == null
                   ? null
                   : () async {
                       setState(() => _isLoading = true);
                       final session = await khaniProvider.startLiveDua(
-                        _selectedKhaniId!,
+                        _joinCode!,
                         _streamType,
                       );
                       if (mounted) {
@@ -112,7 +103,7 @@ class _StartLiveDuaScreenState extends State<StartLiveDuaScreen> {
                           Navigator.pushReplacementNamed(
                             context,
                             '/live-dua-session',
-                            arguments: session.uniqueCode,
+                            arguments: session.joinCode ?? _joinCode,
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(

@@ -52,10 +52,12 @@ Quran Khani is designed to facilitate organized group recitations of the Holy Qu
 - **Secure Authentication**: JWT-based access with bcrypt password hashing
 
 ### Quran Khani Events
-- **Create Khani**: Set title, start date/time, location, prayer after (Fajar/Zohar/Asar/Magrib/Isha), and duration (1–30 days)
-- **Active Session Tracking**: View all active Khanis with real-time duration info
-- **End Khani**: Creator can formally end a Khani session
-- **Event Details**: See full metadata, assignments, and sawab details in one place
+- **Create Khani**: Set title, start date/time, location, prayer after (Fajar/Zohar/Asar/Magrib/Isha), and duration in minutes (1–720)
+- **Unique Join Code**: Every Khani gets an 8-character join code when started
+- **Host Role**: The person who starts the Khani becomes the host
+- **Session States**: Scheduled → Live → Ended
+- **End Khani**: Host can end the session; all joined members receive push notifications
+- **Event Details**: See full metadata, assignments, sawab details, and join code in one place
 
 ### Para Assignment System
 - **30 Para Grid**: Visual grid showing Para 1 through Para 30
@@ -70,19 +72,22 @@ Quran Khani is designed to facilitate organized group recitations of the Holy Qu
 - **Edit Support**: Update existing sawab details anytime during the Khani
 
 ### Live Dua Streaming
-- **Host Mode**: Start a live dua session from any active Khani
-- **Unique Join Code**: 8-character alphanumeric code generated for each session
+- **Unified Join Code**: Uses the same Khani join code — no separate session codes
 - **Audio/Video Support**: Host chooses audio-only or video stream type
-- **Client Join**: Members join using the shared code
-- **Participant List**: See all joined members with roles (host/listener/viewer)
+- **Client Join**: Members join using the Khani join code
 - **Stream Controls**: Host can start stream with RTMP/WebRTC URL and end session
 - **Status Indicators**: Waiting / Live / Ended states with clear UI feedback
 - **Share Functionality**: Copy join code to clipboard for easy sharing
 
+### Push Notifications
+- **Khani Ended Notification**: All participants receive a notification when the host ends a Khani
+- **In-App Notification Center**: View all notifications with read/unread status
+- **Notification Types**: Khani started, khani ended, stream started, stream ended
+
 ### Duration Tracking
-- **Total Duration Visibility**: All members can see the Khani duration
-- **Remaining Days**: Calculate and display days remaining until Khani ends
-- **End Date Display**: Show exact end date based on start date + duration
+- **Duration in Minutes**: Total duration is configured in minutes (not days)
+- **Timer Display**: Live countdown showing remaining minutes during an active session
+- **End Condition**: Host can end manually when time is up or dua is complete
 
 ---
 
@@ -188,7 +193,7 @@ Stores user information including local and Google-authenticated accounts.
 **Indexes**: `email`, `member_code`, `google_id`
 
 ### khanis
-Quran Khani event definitions.
+Quran Khani event definitions. The join_code is generated when the host starts the Khani.
 
 ```javascript
 {
@@ -198,16 +203,19 @@ Quran Khani event definitions.
   start_time: String,        // HH:MM format
   location: String,          // Optional venue
   prayer_after: String,      // fajar | zohar | asar | magrib | isa
-  duration_days: Number,     // 1-30, default 30
+  duration_minutes: Number,  // 1-720, default 60
   description: String,       // Optional details
-  is_active: Boolean,        // true while session active
+  join_code: String,         // 8-char unique code for joining
+  host_id: ObjectId,         // Reference to Profile (set when started)
+  status: String,            // "scheduled" | "live" | "ended"
+  started_at: Date,          // Set when host starts
+  ended_at: Date,            // Set when host ends
   created_by: ObjectId,      // Reference to Profile
-  created_at: Date,
-  ended_at: Date             // Set when Khani ends
+  created_at: Date
 }
 ```
 
-**Indexes**: `created_by`, `is_active`, `created_at`
+**Indexes**: `join_code` (unique), `host_id`, `status`, `created_by`
 
 ### para_assignments
 Tracks which member picked which para for which Khani.
@@ -241,30 +249,57 @@ Essalay Sawab text per Khani.
 
 **Indexes**: `khani_id`
 
-### live_dua_sessions
-Live streaming sessions linked to a Khani.
+### khani_participants
+Tracks who has joined a Khani session.
 
 ```javascript
 {
   _id: ObjectId,
   khani_id: ObjectId,        // Reference to Khani
-  host_id: ObjectId,         // Reference to Profile (host)
-  unique_code: String,       // 8-char join code, unique
-  status: String,            // "waiting" | "live" | "ended"
+  user_id: ObjectId,         // Reference to Profile
+  role: String,              // "host" | "listener"
+  joined_at: Date
+}
+```
+
+**Indexes**: `(khani_id, user_id)` unique
+
+### live_dua_sessions
+Live streaming state per Khani. One session per Khani.
+
+```javascript
+{
+  _id: ObjectId,
+  khani_id: ObjectId,        // Reference to Khani, unique
   stream_type: String,       // "audio" | "video"
-  stream_url: String,        // RTMP/WebRTC URL
+  stream_url: String,        // RTMP/WebRTC/HLS URL
+  status: String,            // "waiting" | "live" | "ended"
   started_at: Date,
   ended_at: Date,
-  participants: [{
-    user_id: ObjectId,
-    role: String,            // "host" | "listener" | "viewer"
-    joined_at: Date
-  }],
   created_at: Date
 }
 ```
 
-**Indexes**: `unique_code`, `(khani_id, status)`, `host_id`
+**Indexes**: `khani_id` (unique)
+
+### notifications
+Push notifications for Khani events.
+
+```javascript
+{
+  _id: ObjectId,
+  user_id: ObjectId,         // Reference to Profile
+  khani_id: ObjectId,        // Reference to Khani
+  type: String,              // "khani_started" | "khani_ended" | "stream_started" | "stream_ended"
+  title: String,             // Notification title
+  message: String,           // Notification body
+  data: Mixed,               // Additional payload (khani_id, join_code)
+  read: Boolean,             // Read status
+  created_at: Date
+}
+```
+
+**Indexes**: `(user_id, read, created_at)`
 
 ---
 
@@ -294,14 +329,17 @@ QuranKhaniApp/
 │       │   ├── Khani.js
 │       │   ├── ParaAssignment.js
 │       │   ├── SawabDetail.js
-│       │   └── LiveDuaSession.js
+│       │   ├── LiveDuaSession.js
+│       │   ├── KhaniParticipant.js
+│       │   └── Notification.js
 │       ├── routes/
 │       │   ├── auth.js       # /api/auth/*
 │       │   ├── authOAuth.js  # /api/auth/oauth/*
 │       │   ├── khanis.js     # /api/khanis/*
 │       │   ├── paras.js      # /api/paras/*
 │       │   ├── sawab.js      # /api/sawab/*
-│       │   └── liveDua.js    # /api/live-dua/*
+│       │   ├── liveDua.js    # /api/live-dua/*
+│       │   └── notifications.js # /api/notifications/*
 │       └── index.js          # Express app entry point
 │
 └── flutter_app/              # Flutter mobile application
@@ -326,7 +364,8 @@ QuranKhaniApp/
         │   ├── live_dua_home_screen.dart
         │   ├── start_live_dua_screen.dart
         │   ├── join_live_dua_screen.dart
-        │   └── live_dua_session_screen.dart
+        │   ├── live_dua_session_screen.dart
+        │   └── notifications_screen.dart
         └── services/
             ├── api_service.dart           # HTTP client
             ├── google_sign_in_service.dart # Google OAuth helper
@@ -584,7 +623,7 @@ POST /api/khanis
   "start_time": "06:30",
   "location": "Main Hall, Community Center",
   "prayer_after": "fajar",
-  "duration_days": 30,
+  "duration_minutes": 60,
   "description": "Recitation of entire Quran with tafseer"
 }
 ```
@@ -602,8 +641,9 @@ POST /api/khanis
       "start_time": "06:30",
       "location": "Main Hall, Community Center",
       "prayer_after": "fajar",
-      "duration_days": 30,
-      "is_active": true,
+      "duration_minutes": 60,
+      "join_code": "KJ7H4G2F",
+      "status": "scheduled",
       "created_by": "64b...",
       "created_at": "2024-01-15T08:00:00.000Z"
     }
@@ -613,10 +653,50 @@ POST /api/khanis
 
 ---
 
-#### List Active Khanis
+#### Start Quran Khani (Host)
+```http
+POST /api/khanis/:id/start
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+Changes status from `scheduled` to `live`, sets `host_id` and `started_at`, and generates `join_code` if not already set.
+
+---
+
+#### Join Quran Khani
+```http
+POST /api/khanis/join
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request Body:**
+```json
+{
+  "join_code": "KJ7H4G2F"
+}
+```
+
+Adds the user as a participant in the Khani.
+
+---
+
+#### Get Khani by Join Code
+```http
+GET /api/khanis/code/:join_code
+```
+
+Public endpoint — no authentication required. Returns the Khani details for a given join code.
+
+---
+
+#### List Live Khanis
 ```http
 GET /api/khanis
 ```
+
+Returns all Khanis with `status: "live"`.
 
 **Response:**
 ```json
@@ -631,9 +711,12 @@ GET /api/khanis
         "start_time": "06:30",
         "location": "Main Hall",
         "prayer_after": "fajar",
-        "duration_days": 30,
-        "is_active": true,
-        "profiles": { "name": "Ahmad Ali" }
+        "duration_minutes": 60,
+        "join_code": "KJ7H4G2F",
+        "status": "live",
+        "host_id": "64b...",
+        "profiles": { "name": "Ahmad Ali" },
+        "host_profile": { "name": "Host Name" }
       }
     ]
   }
@@ -652,7 +735,7 @@ GET /api/khanis/:id
 {
   "status": "success",
   "data": {
-    "khani": { /* full khani object */ },
+    "khani": { /* full khani object with join_code, status, host info */ },
     "assignments": [
       {
         "id": "64d...",
@@ -682,7 +765,7 @@ POST /api/khanis/:id/end
 
 **Headers:** `Authorization: Bearer <token>`
 
-Only the creator can end the Khani.
+Only the host or creator can end the Khani. This creates notifications for all participants.
 
 ---
 
@@ -787,7 +870,7 @@ POST /api/live-dua/start
 **Request Body:**
 ```json
 {
-  "khani_id": "64c...",
+  "join_code": "KJ7H4G2F",
   "stream_type": "audio"
 }
 ```
@@ -796,22 +879,14 @@ POST /api/live-dua/start
 ```json
 {
   "status": "success",
-  "message": "Live dua session created",
+  "message": "Live dua session ready",
   "data": {
     "session": {
       "id": "650...",
       "khani_id": "64c...",
-      "host_id": "64b...",
-      "unique_code": "KJ7H4G2F",
-      "status": "waiting",
       "stream_type": "audio",
-      "participants": [
-        {
-          "user_id": "64b...",
-          "role": "host",
-          "joined_at": "2024-01-20T14:00:00.000Z"
-        }
-      ]
+      "status": "waiting",
+      "created_at": "2024-01-20T14:00:00.000Z"
     }
   }
 }
@@ -829,15 +904,27 @@ POST /api/live-dua/join
 **Request Body:**
 ```json
 {
-  "unique_code": "KJ7H4G2F"
+  "join_code": "KJ7H4G2F"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "message": "Joined live dua session",
+  "data": {
+    "khani": { /* populated khani object */ },
+    "liveSession": { /* live dua session object */ }
+  }
 }
 ```
 
 ---
 
-#### Get Session by Code
+#### Get Session by Join Code
 ```http
-GET /api/live-dua/code/:unique_code
+GET /api/live-dua/code/:join_code
 ```
 
 Public endpoint — no authentication required.
@@ -846,7 +933,7 @@ Public endpoint — no authentication required.
 
 #### Start Stream (Host Only)
 ```http
-POST /api/live-dua/code/:unique_code/start
+POST /api/live-dua/code/:join_code/start
 ```
 
 **Headers:** `Authorization: Bearer <token>`
@@ -854,7 +941,8 @@ POST /api/live-dua/code/:unique_code/start
 **Request Body:**
 ```json
 {
-  "stream_url": "rtmp://stream.server.com/live/stream-key"
+  "stream_url": "rtmp://stream.server.com/live/stream-key",
+  "stream_type": "audio"
 }
 ```
 
@@ -864,12 +952,58 @@ Changes session status from `waiting` to `live`.
 
 #### End Session (Host Only)
 ```http
-POST /api/live-dua/code/:unique_code/end
+POST /api/live-dua/code/:join_code/end
 ```
 
 **Headers:** `Authorization: Bearer <token>`
 
 Changes session status to `ended`.
+
+---
+
+### Notifications Endpoints
+
+#### Get My Notifications
+```http
+GET /api/notifications
+```
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "data": {
+    "notifications": [
+      {
+        "id": "651...",
+        "user_id": "64b...",
+        "khani_id": "64c...",
+        "type": "khani_ended",
+        "title": "Quran Khani Ended",
+        "message": "Host Name has ended the Quran Khani \"Title\"",
+        "data": {
+          "khani_id": "64c...",
+          "join_code": "KJ7H4G2F"
+        },
+        "read": false,
+        "created_at": "2024-01-20T15:00:00.000Z"
+      }
+    ],
+    "unread_count": 1
+  }
+}
+```
+
+---
+
+#### Mark Notification as Read
+```http
+PATCH /api/notifications/:id/read
+```
+
+**Headers:** `Authorization: Bearer <token>`
 
 ---
 
@@ -896,31 +1030,34 @@ Changes session status to `ended`.
 - Logout button
 
 #### Khani List
-- Lists all active Khanis with cards
+- Lists all Khanis with cards (scheduled, live, ended)
 - Pull-to-refresh
 - Floating action button to create new Khani
-- Each card shows: title, date, time, location, prayer timing, duration, active/ended status
+- Each card shows: title, date, time, location, prayer timing, duration in minutes, join code, status badge
+- Host actions: Start Khani, End Khani, Start Live Dua
 
 #### Create Khani Dialog
 - Form fields: title, start date, start time, location
 - Prayer after dropdown (Fajar/Zohar/Asar/Magrib/Isha)
-- Duration in days (1-30)
+- Duration in minutes (1-720)
 - Optional description
 
 #### Khani Details
 - Full Khani information card
-- Duration info with remaining days
+- Timer info (remaining minutes when live, duration when scheduled)
+- Join code display with copy button
 - Para grid (1-30) with status colors:
   - Green = Completed
   - Orange = Assigned to current user (tappable to complete)
   - Gray = Taken by another member (readonly)
   - White = Available for assignment
 - Essalay Sawab text input and save button
-- End Khani button (creator only)
-- Live Dua button (creator only, if active)
+- Start Khani button (if scheduled and user is host/creator)
+- End Khani button (host only, when live)
+- Live Dua button (host only, when live)
 
 #### Para Selection
-- Shows active Khani info
+- Shows active Khani info with join code
 - 30-para grid with same visual states as details
 - Member code display
 - Assign para by tapping available button
@@ -928,26 +1065,31 @@ Changes session status to `ended`.
 
 #### Live Dua Home
 - Start Live Dua (Host) button
-- Join Live Dua with Code button
-- Brief description of the feature
+- Join with Khani Code button
+- Brief description of the unified join code flow
 
 #### Start Live Dua
-- Select active Khani from dropdown
+- Shows the Khani join code
 - Choose stream type: Audio or Video
-- Creates session and navigates to session screen
+- Creates live dua session linked to the Khani
 
 #### Join Live Dua
-- Enter 8-character join code
-- Joins session and navigates to session screen
+- Enter 8-character join code (same as Khani code)
+- Joins Khani and navigates to details/session
 
 #### Live Dua Session
 - Session status card (Waiting / Live / Ended)
-- Unique code display with copy button
-- Host name and Khani title
-- Participant list with roles
+- Join code display with copy button
+- Khani title and host name
 - Host controls: Start Stream, End Session
 - Client actions: Listen (audio), Watch (video), Share code
 - Stream URL input dialog for host
+
+#### Notifications
+- List of all notifications with read/unread status
+- Unread count badge
+- Mark as read functionality
+- Notification types: khani_started, khani_ended, stream_started, stream_ended
 
 ---
 
@@ -988,26 +1130,30 @@ Changes session status to `ended`.
 
 ## Live Dua Streaming Flow
 
+The Quran Khani join code doubles as the live dua session identifier. There is no separate "live dua" creation step — the host starts the Khani, gets a join code, and that same code is used for the live dua stream.
+
 ```
 Host Flow:
-1. Host creates/owns an active Khani
-2. Taps "Start Live Dua" from Khani details or Dashboard
-3. Selects Khani and stream type (audio/video)
-4. Backend creates session with unique 8-char code
-5. Host sees session screen with code, shares with participants
-6. Host enters RTMP/WebRTC stream URL
-7. Host taps "Start Stream" → status changes to "live"
-8. Participants can now listen/watch
-9. Host taps "End" when dua is complete → status changes to "ended"
+1. Host creates a new Quran Khani from the app
+2. Host taps "Start Khani" → status changes to "live"
+3. Backend generates an 8-char join code and sets host_id
+4. Host shares the join code with participants
+5. Host taps "Live Dua" from Khani details
+6. Host selects stream type (audio/video)
+7. Host enters RTMP/WebRTC stream URL
+8. Host taps "Start Stream" → live dua status changes to "live"
+9. Participants can now listen/watch
+10. Host taps "End Khani" when dua is complete
+11. All joined members receive push notification
 
 Client Flow:
-1. Client taps "Join Live Dua"
-2. Enters 8-char code shared by host
-3. Backend validates code, adds client as participant
-4. Client sees session in "waiting" state
+1. Client taps "Join with Khani Code" from Live Dua home
+2. Enters the 8-char join code shared by host
+3. Backend validates code and adds client as participant
+4. Client sees Khani details with live dua status
 5. When host starts stream, status changes to "live"
-6. Client taps "Listen" or "Watch" based on stream type
-7. Client can share code with others
+6. Client taps "Listen" (audio) or "Watch" (video)
+7. When host ends Khani, client receives push notification
 ```
 
 ### Stream URL Format
@@ -1018,6 +1164,25 @@ The `stream_url` field accepts standard streaming URLs:
 - **HLS**: `https://cdn.server.com/live/stream.m3u8`
 
 The app currently shows the URL in the UI. Actual playback/streaming requires integration with a media player or WebRTC client library (e.g., `video_player`, `flutter_webrtc`).
+
+---
+
+## Push Notifications
+
+When the host ends a Quran Khani, the backend creates notifications for all participants (excluding the host). The Flutter app can fetch these via the notifications API.
+
+### Notification Types
+- `khani_started` — Host has started the Khani session
+- `khani_ended` — Host has ended the Khani session
+- `stream_started` — Live dua stream has started
+- `stream_ended` — Live dua stream has ended
+
+### In-App Notification Center
+- Accessible from Dashboard via notifications icon
+- Shows unread count badge
+- Pull to refresh
+- Mark individual notifications as read
+- Relative timestamps (Just now, 5 min ago, etc.)
 
 ---
 
@@ -1060,7 +1225,10 @@ The app currently shows the URL in the UI. Actual playback/streaming requires in
 
 ## Roadmap
 
-- [ ] Push notifications for live dua invitations
+- [x] Push notifications for Khani end events
+- [x] Unified join code for Khani and live dua
+- [x] Duration in minutes with live timer
+- [x] Google OAuth authentication
 - [ ] Real-time para assignment updates via WebSockets
 - [ ] In-app audio/video player for live streams
 - [ ] Multi-language support (Urdu, Arabic)
@@ -1071,28 +1239,3 @@ The app currently shows the URL in the UI. Actual playback/streaming requires in
 - [ ] Dark mode support
 - [ ] Biometric authentication
 
----
-
-## License
-
-This project is licensed under the MIT License.
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please ensure all tests pass and code follows the existing style before submitting.
-
----
-
-## Support
-
-For issues, questions, or feature requests, please open an issue on GitHub.
-
-**Last Updated:** August 2026

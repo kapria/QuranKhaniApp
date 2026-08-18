@@ -10,6 +10,7 @@ import 'screens/live_dua_home_screen.dart';
 import 'screens/start_live_dua_screen.dart';
 import 'screens/join_live_dua_screen.dart';
 import 'screens/live_dua_session_screen.dart';
+import 'screens/notifications_screen.dart';
 import 'providers/auth_provider.dart';
 import 'providers/khani_provider.dart';
 
@@ -46,6 +47,7 @@ class QuranKhaniApp extends StatelessWidget {
           '/start-live-dua': (context) => const StartLiveDuaScreen(),
           '/join-live-dua': (context) => const JoinLiveDuaScreen(),
           '/live-dua-session': (context) => const LiveDuaSessionScreen(),
+          '/notifications': (context) => const NotificationsScreen(),
         },
       ),
     );

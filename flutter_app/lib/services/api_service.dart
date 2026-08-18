@@ -74,9 +74,35 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  Future<LiveDuaSession?> startLiveDua(String khaniId, String streamType) async {
+  Future<Khani?> startKhani(String khaniId) async {
+    final response = await post('/khanis/$khaniId/start', {});
+    if (response['status'] == 'success') {
+      return Khani.fromJson(response['data']['khani']);
+    }
+    return null;
+  }
+
+  Future<Khani?> joinKhani(String joinCode) async {
+    final response = await post('/khanis/join', {
+      'join_code': joinCode,
+    });
+    if (response['status'] == 'success') {
+      return Khani.fromJson(response['data']['khani']);
+    }
+    return null;
+  }
+
+  Future<Khani?> getKhaniByCode(String joinCode) async {
+    final response = await get('/khanis/code/$joinCode');
+    if (response['status'] == 'success') {
+      return Khani.fromJson(response['data']['khani']);
+    }
+    return null;
+  }
+
+  Future<LiveDuaSession?> startLiveDua(String joinCode, String streamType) async {
     final response = await post('/live-dua/start', {
-      'khani_id': khaniId,
+      'join_code': joinCode,
       'stream_type': streamType,
     });
     if (response['status'] == 'success') {
@@ -85,33 +111,56 @@ class ApiService {
     return null;
   }
 
-  Future<LiveDuaSession?> joinLiveDua(String uniqueCode) async {
+  Future<Map<String, dynamic>?> joinLiveDua(String joinCode) async {
     final response = await post('/live-dua/join', {
-      'unique_code': uniqueCode,
+      'join_code': joinCode,
     });
     if (response['status'] == 'success') {
-      return LiveDuaSession.fromJson(response['data']['session']);
+      return response['data'];
     }
     return null;
   }
 
-  Future<LiveDuaSession?> getLiveSession(String uniqueCode) async {
-    final response = await get('/live-dua/code/$uniqueCode');
+  Future<LiveDuaSession?> getLiveSessionByCode(String joinCode) async {
+    final response = await get('/live-dua/code/$joinCode');
     if (response['status'] == 'success') {
-      return LiveDuaSession.fromJson(response['data']['session']);
+      return LiveDuaSession.fromJson(response['data']['liveSession'] ?? {});
     }
     return null;
   }
 
-  Future<bool> startStream(String uniqueCode, String? streamUrl) async {
-    final response = await post('/live-dua/code/$uniqueCode/start', {
+  Future<bool> startStream(String joinCode, String? streamUrl, String streamType) async {
+    final response = await post('/live-dua/code/$joinCode/start', {
       'stream_url': streamUrl ?? '',
+      'stream_type': streamType,
     });
     return response['status'] == 'success';
   }
 
-  Future<bool> endLiveDua(String uniqueCode) async {
-    final response = await post('/live-dua/code/$uniqueCode/end', {});
+  Future<bool> endLiveDua(String joinCode) async {
+    final response = await post('/live-dua/code/$joinCode/end', {});
+    return response['status'] == 'success';
+  }
+
+  Future<List<NotificationModel>> getNotifications() async {
+    final response = await get('/notifications');
+    if (response['status'] == 'success') {
+      final List list = response['data']['notifications'] ?? [];
+      return list.map((n) => NotificationModel.fromJson(n)).toList();
+    }
+    return [];
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final response = await get('/notifications');
+    if (response['status'] == 'success') {
+      return response['data']['unread_count'] ?? 0;
+    }
+    return 0;
+  }
+
+  Future<bool> markNotificationAsRead(String notificationId) async {
+    final response = await patch('/notifications/$notificationId/read', {});
     return response['status'] == 'success';
   }
 

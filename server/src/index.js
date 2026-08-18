@@ -8,6 +8,7 @@ const khanisRoutes = require('./routes/khanis');
 const parasRoutes = require('./routes/paras');
 const sawabRoutes = require('./routes/sawab');
 const liveDuaRoutes = require('./routes/liveDua');
+const notificationsRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use('/api/khanis', khanisRoutes);
 app.use('/api/paras', parasRoutes);
 app.use('/api/sawab', sawabRoutes);
 app.use('/api/live-dua', liveDuaRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

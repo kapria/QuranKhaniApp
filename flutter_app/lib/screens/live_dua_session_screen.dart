@@ -30,23 +30,26 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
     final khaniProvider = Provider.of<KhaniProvider>(context);
     final authProvider = Provider.of<AuthProvider>(context);
     final session = khaniProvider.liveSession;
-    final isHost = session != null && session.hostId == authProvider.user?.id;
+    final khani = khaniProvider.selectedKhani;
+    final joinCode = session?.joinCode ?? khani?.joinCode ?? '';
+    final isHost = khani != null && 
+                   (khani.hostId == authProvider.user?.id || khani.createdBy == authProvider.user?.id);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(session?.uniqueCode ?? 'Live Dua'),
+        title: Text(joinCode.isNotEmpty ? joinCode : 'Live Dua'),
         actions: [
           if (isHost && session?.status == 'waiting')
             IconButton(
               icon: const Icon(Icons.play_arrow),
-              onPressed: () => _showStartStreamDialog(context, session!.uniqueCode),
+              onPressed: () => _showStartStreamDialog(context, joinCode),
               tooltip: 'Start Stream',
             ),
           if (isHost && session?.status == 'live')
             IconButton(
               icon: const Icon(Icons.stop),
               onPressed: () async {
-                final success = await khaniProvider.endLiveDua(session!.uniqueCode);
+                final success = await khaniProvider.endLiveDua(joinCode);
                 if (success && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Live dua ended')),
@@ -86,6 +89,8 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
   }
 
   Widget _buildSessionCard(BuildContext context, session, bool isHost) {
+    final khani = khaniProvider.selectedKhani;
+    
     return Card(
       color: session.status == 'live' ? Colors.red[50] : Colors.orange[50],
       child: Padding(
@@ -116,7 +121,7 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    session.uniqueCode,
+                    session.joinCode ?? khani?.joinCode ?? '',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       letterSpacing: 2,
@@ -126,9 +131,10 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            Text('Khani: ${session.khaniTitle ?? 'N/A'}'),
+            Text('Khani: ${session.khaniTitle ?? khani?.title ?? 'N/A'}'),
             const SizedBox(height: 4),
-            Text('Host: ${session.hostName ?? 'N/A'}'),
+            if (khani != null && khani.hostName != null)
+              Text('Host: ${khani.hostName}'),
             const SizedBox(height: 4),
             Text('Type: ${session.streamType == 'video' ? 'Video + Audio' : 'Audio Only'}'),
             if (isHost) ...[
@@ -145,6 +151,8 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
   }
 
   Widget _buildParticipantsList(BuildContext context, session) {
+    final khani = khaniProvider.selectedKhani;
+    
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -156,29 +164,24 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            if (session.participants.isEmpty)
-              const Text('No participants yet')
-            else
-              ...session.participants.map((p) => ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      backgroundColor: p.role == 'host' ? Colors.red : Colors.blue,
-                      child: Icon(
-                        p.role == 'host' ? Icons.mic : Icons.headset,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                    title: Text(p.userName ?? 'User'),
-                    subtitle: Text(p.memberCode ?? ''),
-                    trailing: Text(
-                      p.role.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: p.role == 'host' ? Colors.red : Colors.blue,
-                      ),
-                    ),
-                  )),
+            if (khani?.hostName != null)
+              ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  backgroundColor: Colors.red,
+                  child: const Icon(Icons.mic, color: Colors.white, size: 18),
+                ),
+                title: Text(khani!.hostName!),
+                subtitle: Text(khani.hostId ?? ''),
+                trailing: const Text(
+                  'HOST',
+                  style: TextStyle(fontSize: 12, color: Colors.red),
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Others joined with the same code'),
+            ),
           ],
         ),
       ),
@@ -267,13 +270,13 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
         Card(
           child: ListTile(
             leading: const Icon(Icons.share, color: Colors.blue),
-            title: const Text('Share'),
-            subtitle: Text('Code: ${session.uniqueCode}'),
+            title: const Text('Share Join Code'),
+            subtitle: Text('Code: ${session.joinCode ?? ''}'),
             trailing: IconButton(
               icon: const Icon(Icons.copy),
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Copied: ${session.uniqueCode}')),
+                  SnackBar(content: Text('Copied: ${session.joinCode ?? ''}')),
                 );
               },
             ),
@@ -283,7 +286,7 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
     );
   }
 
-  void _showStartStreamDialog(BuildContext context, String uniqueCode) {
+  void _showStartStreamDialog(BuildContext context, String joinCode) {
     final streamUrlController = TextEditingController();
 
     showDialog(
@@ -315,10 +318,11 @@ class _LiveDuaSessionScreenState extends State<LiveDuaSessionScreen> {
               Navigator.pop(context);
               final khaniProvider = Provider.of<KhaniProvider>(context, listen: false);
               final success = await khaniProvider.startStream(
-                uniqueCode,
+                joinCode,
                 streamUrlController.text.trim().isEmpty
                     ? null
                     : streamUrlController.text.trim(),
+                'audio',
               );
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(

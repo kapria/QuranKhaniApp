@@ -27,35 +27,52 @@ const khaniSchema = new mongoose.Schema({
       message: 'Prayer time must be: fajar, zohar, asar, magrib, or isa',
     },
   },
-  duration_days: {
+  duration_minutes: {
     type: Number,
-    required: [true, 'Please add duration'],
-    min: [1, 'Duration must be at least 1 day'],
-    max: [30, 'Duration cannot exceed 30 days'],
-    default: 30,
+    required: [true, 'Please add duration in minutes'],
+    min: [1, 'Duration must be at least 1 minute'],
+    max: [720, 'Duration cannot exceed 720 minutes (12 hours)'],
+    default: 60,
   },
   description: {
     type: String,
     trim: true,
   },
-  is_active: {
-    type: Boolean,
-    default: true,
+  join_code: {
+    type: String,
+    unique: true,
+    uppercase: true,
+    length: 8,
+  },
+  host_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Profile',
+    index: true,
+  },
+  status: {
+    type: String,
+    enum: ['scheduled', 'live', 'ended'],
+    default: 'scheduled',
+    index: true,
+  },
+  started_at: {
+    type: Date,
+  },
+  ended_at: {
+    type: Date,
   },
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Profile',
     required: true,
   },
-  ended_at: {
-    type: Date,
-  },
 }, {
   timestamps: true,
 });
 
+khaniSchema.index({ join_code: 1 });
+khaniSchema.index({ host_id: 1 });
+khaniSchema.index({ status: 1, created_at: -1 });
 khaniSchema.index({ created_by: 1 });
-khaniSchema.index({ is_active: 1 });
-khaniSchema.index({ created_at: -1 });
 
 module.exports = mongoose.model('Khani', khaniSchema);

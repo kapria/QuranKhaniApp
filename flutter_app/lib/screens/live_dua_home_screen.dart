@@ -27,7 +27,7 @@ class LiveDuaHomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Start or join a live dua session after completing Quran Khani',
+              'Use the same Khani join code to start or join a live dua session',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
@@ -47,7 +47,7 @@ class LiveDuaHomeScreen extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: () => Navigator.pushNamed(context, '/join-live-dua'),
               icon: const Icon(Icons.join_inner),
-              label: const Text('Join Live Dua with Code'),
+              label: const Text('Join with Khani Code'),
               style: OutlinedButton(
                 style: OutlinedButton(
                   padding: const EdgeInsets.symmetric(vertical: 16),
