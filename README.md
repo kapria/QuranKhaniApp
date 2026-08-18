@@ -24,9 +24,6 @@ A comprehensive **Quran Khani management system** with a Flutter mobile applicat
 11. [Authentication & Security](#authentication--security)
 12. [Live Dua Streaming Flow](#live-dua-streaming-flow)
 13. [Troubleshooting](#troubleshooting)
-14. [Roadmap](#roadmap)
-15. [License](#license)
-
 ---
 
 ## Overview
@@ -1222,20 +1219,3 @@ When the host ends a Quran Khani, the backend creates notifications for all part
 - Verify user is authenticated (token present)
 
 ---
-
-## Roadmap
-
-- [x] Push notifications for Khani end events
-- [x] Unified join code for Khani and live dua
-- [x] Duration in minutes with live timer
-- [x] Google OAuth authentication
-- [ ] Real-time para assignment updates via WebSockets
-- [ ] In-app audio/video player for live streams
-- [ ] Multi-language support (Urdu, Arabic)
-- [ ] Offline mode for para selection
-- [ ] Push notification for Khani reminders
-- [ ] Admin panel for user management
-- [ ] Export attendance/sawab reports as PDF
-- [ ] Dark mode support
-- [ ] Biometric authentication
-
